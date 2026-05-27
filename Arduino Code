@@ -1,0 +1,217 @@
+#include <Stepper.h>
+
+
+#define STEPS 100
+#define MAX_POSITION 200
+
+
+Stepper stepper(STEPS, 8, 9, 10, 11);
+
+
+long currentPosition = 0;
+
+
+// ---------------- ULTRASONIC SENSOR ----------------
+const int trigPin = 6;
+const int echoPin = 7;
+
+
+const int numReadings = 10;
+
+
+int readings[numReadings];
+int readIndex = 0;
+long total = 0;
+int average = 0;
+
+
+// ---------------- SPEAKER ----------------
+const int speakerPin = 5;
+
+
+unsigned long lastBeepTime = 0;
+unsigned long lastChaosTime = 0;
+
+
+// CALM
+const int calmInterval = 4500;
+const int calmFreq = 150;
+
+
+// FAST RANGE
+const int fastInterval = 40;
+const int maxFreq = 1900;
+
+
+const int beepLength = 55;
+
+
+void setup() {
+
+
+ stepper.setSpeed(30);
+
+
+ Serial.begin(9600);
+
+
+ pinMode(speakerPin, OUTPUT);
+
+
+ pinMode(trigPin, OUTPUT);
+ pinMode(echoPin, INPUT);
+
+
+ for (int i = 0; i < numReadings; i++) {
+   readings[i] = 0;
+ }
+}
+
+
+void loop() {
+
+
+ // ---------- GET DISTANCE ----------
+
+
+ digitalWrite(trigPin, LOW);
+ delayMicroseconds(2);
+
+
+ digitalWrite(trigPin, HIGH);
+ delayMicroseconds(10);
+
+
+ digitalWrite(trigPin, LOW);
+
+
+ long duration = pulseIn(echoPin, HIGH);
+
+
+ // distance in cm
+ int distance = duration * 0.034 / 2;
+
+
+ // limit bad readings
+ distance = constrain(distance, 0, 200);
+
+
+ // ---------- SMOOTHING ----------
+
+
+ total -= readings[readIndex];
+ readings[readIndex] = distance;
+ total += readings[readIndex];
+
+
+ readIndex++;
+
+
+ if (readIndex >= numReadings) {
+   readIndex = 0;
+ }
+
+
+ average = total / numReadings;
+
+
+ Serial.println(average);
+
+
+ // ---------- MOTOR ----------
+
+
+ // closer object = more movement
+ long targetPosition = map(average, 200, 0, 0, MAX_POSITION);
+
+
+ long stepsToMove =
+     constrain(targetPosition - currentPosition, -5, 5);
+
+
+ // ---------- CHAOS (< 15 cm) ----------
+
+
+ if (average < 15) {
+
+
+   if (millis() - lastChaosTime > 30) {
+
+
+     tone(speakerPin,
+          random(250, 2400),
+          beepLength);
+
+
+     lastChaosTime = millis();
+   }
+ }
+
+
+ // ---------- ACTIVE RANGE ----------
+
+
+ else if (average < 150) {
+
+
+   float t = (150 - average) / 135.0;
+
+
+   t = constrain(t, 0.0, 1.0);
+
+
+   t = pow(t, 0.6);
+
+
+   int interval =
+       calmInterval -
+       ((calmInterval - fastInterval) * t);
+
+
+   int freq =
+       calmFreq +
+       ((maxFreq - calmFreq) * t);
+
+
+   if (millis() - lastBeepTime > interval) {
+
+
+     tone(speakerPin, freq, beepLength);
+
+
+     lastBeepTime = millis();
+   }
+ }
+
+
+ // ---------- CALM ----------
+
+
+ else {
+
+
+   if (millis() - lastBeepTime > calmInterval) {
+
+
+     tone(speakerPin, calmFreq, beepLength);
+
+
+     lastBeepTime = millis();
+   }
+ }
+
+
+ // ---------- MOTOR ----------
+
+
+ stepper.step(stepsToMove);
+
+
+ currentPosition += stepsToMove;
+
+
+ delay(10);
+}
+
+
+
