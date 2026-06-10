@@ -5,35 +5,45 @@ const MAX_DIST = 200;
 
 const sketch = function(p) {
   const AXIOM = 'X';
+
   const RULES = {
     'X': 'F+[[X]-X]-F[-FX]+X',
     'F': 'FF'
   };
+
   const MAX_DEPTH = 6;
-  const MIN_DEPTH = 0;
 
   let strings = [];
+
   let mode = 'grow';
-  let growDepth = MIN_DEPTH;
-  let witherProgress = 1.0;
+  let growthAmount = 0;
+
   let currentString = '';
   let renderLength = 0;
 
-  const WITHER_SPEED = 0.012;
-  const PULSE_SPEED  = 0.012;
+  // Slower growth, same withering
+  const GROW_SPEED = 0.0005;
+  const WITHER_SPEED = 0.0015;
 
+  const PULSE_SPEED = 0.012;
   let pulse = 0;
   let pulseDir = 1;
-  let lastGrowTime = 0;
-  const GROW_INTERVAL = 1000;
+
+  let minRenderLength = 0;
 
   function buildStrings() {
     strings = [];
+
     let s = AXIOM;
     strings.push(s);
+
     for (let i = 1; i <= MAX_DEPTH; i++) {
       let next = '';
-      for (const ch of s) next += RULES[ch] || ch;
+
+      for (const ch of s) {
+        next += RULES[ch] || ch;
+      }
+
       s = next;
       strings.push(s);
     }
@@ -45,94 +55,141 @@ const sketch = function(p) {
 
   function trunkLength() {
     const s = strings[MAX_DEPTH];
+
     for (let i = 0; i < s.length; i++) {
       if (s[i] === '[') return i;
     }
+
     return s.length;
   }
-
-  let minRenderLength = 0;
 
   p.setup = function() {
     p.createCanvas(500, 500);
     p.angleMode(p.DEGREES);
+
     buildStrings();
-    currentString = strings[MIN_DEPTH];
-    renderLength = currentString.length;
-    growDepth = MIN_DEPTH;
-    witherProgress = 1.0;
-    lastGrowTime = p.millis();
+
+    currentString = strings[MAX_DEPTH];
     minRenderLength = trunkLength();
+
+    growthAmount = 0;
   };
 
   p.draw = function() {
     p.background(17);
 
     pulse += PULSE_SPEED * pulseDir;
-    if (pulse > 1 || pulse < 0) pulseDir *= -1;
+
+    if (pulse > 1 || pulse < 0) {
+      pulseDir *= -1;
+    }
 
     const close = isClose();
 
     if (close && mode === 'grow') {
       mode = 'wither';
-    } else if (!close && mode === 'wither' && witherProgress <= 0.01) {
+    }
+
+    if (!close && mode === 'wither' && growthAmount <= 0.001) {
       mode = 'grow';
-      growDepth = MIN_DEPTH;
-      witherProgress = 1.0;
-      lastGrowTime = p.millis();
     }
 
+    // Smooth growth / withering
     if (mode === 'grow') {
-      const now = p.millis();
-      if (now - lastGrowTime >= GROW_INTERVAL && growDepth < MAX_DEPTH) {
-        growDepth++;
-        lastGrowTime = now;
-      }
-      currentString = strings[growDepth];
-      renderLength = currentString.length;
-      witherProgress = 1.0;
+      growthAmount = p.min(
+        1,
+        growthAmount + GROW_SPEED
+      );
+    } else {
+      growthAmount = p.max(
+        0,
+        growthAmount - WITHER_SPEED
+      );
     }
 
-    if (mode === 'wither') {
-      witherProgress = p.max(0, witherProgress - WITHER_SPEED);
-      currentString = strings[p.constrain(growDepth, MIN_DEPTH, MAX_DEPTH)];
-      const full = currentString.length;
-      const minLen = minRenderLength;
-      renderLength = p.floor(p.lerp(minLen, full, witherProgress));
-    }
+    currentString = strings[MAX_DEPTH];
+
+    renderLength = p.floor(
+      p.lerp(
+        minRenderLength,
+        currentString.length,
+        growthAmount
+      )
+    );
 
     let br, bg, bb;
+
     if (mode === 'grow') {
-      br = 50; bg = 180; bb = 120;
+      br = 50;
+      bg = 180;
+      bb = 120;
     } else {
-      br = 220; bg = p.lerp(0, 80, witherProgress); bb = p.lerp(0, 50, witherProgress);
+      br = 220;
+      bg = p.lerp(0, 80, growthAmount);
+      bb = p.lerp(0, 50, growthAmount);
     }
 
-    const len = p.map(growDepth, MIN_DEPTH, MAX_DEPTH, 28, 4); // shorter segments, same angle
+    const len = 4;
     const angle = 35 + pulse * 1.5;
 
+    p.push();
     p.translate(p.width / 2, p.height - 20);
 
     let stack = [];
+
     const chars = currentString.slice(0, renderLength);
+
     for (const ch of chars) {
-      const alpha = p.map(stack.length, 0, 10, 230, 90);
+      const alpha = p.map(
+        stack.length,
+        0,
+        10,
+        230,
+        90
+      );
+
       switch (ch) {
         case 'F':
           p.stroke(br, bg, bb, alpha);
-          p.strokeWeight(p.max(0.4, p.map(stack.length, 0, 14, 2.5, 0.4)));
+
+          p.strokeWeight(
+            p.max(
+              0.4,
+              p.map(
+                stack.length,
+                0,
+                14,
+                2.5,
+                0.4
+              )
+            )
+          );
+
           p.line(0, 0, 0, -len);
           p.translate(0, -len);
           break;
-        case '+': p.rotate(angle);  break;
-        case '-': p.rotate(-angle); break;
-        case '[': stack.push({}); p.push(); break;
+
+        case '+':
+          p.rotate(angle);
+          break;
+
+        case '-':
+          p.rotate(-angle);
+          break;
+
+        case '[':
+          stack.push({});
+          p.push();
+          break;
+
         case ']':
           p.pop();
           if (stack.length) stack.pop();
           break;
       }
     }
+
+    p.pop();
   };
 };
 
@@ -141,3 +198,90 @@ const myP5 = new p5(sketch);
 function updateDistance(val) {
   distance = val;
 }
+
+//HTML Code:
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ultrasonic sensor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #111;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas { display: block; }
+    #overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+    }
+    #overlay span {
+      color: #555;
+      font-family: monospace;
+      font-size: 14px;
+      letter-spacing: 0.1em;
+    }
+  </style>
+</head>
+<body>
+
+<div id="overlay" onclick="connectSerial()">
+  <span>click anywhere to connect</span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script src="sketch.js"></script>
+
+<script>
+  let port, reader;
+  let buffer = '';
+
+  async function connectSerial() {
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 9600 });
+
+      document.getElementById('overlay').style.display = 'none';
+
+      const decoder = new TextDecoderStream();
+      port.readable.pipeTo(decoder.writable);
+      reader = decoder.readable.getReader();
+      readNext();
+    } catch (err) {
+      console.error('Serial error:', err.message);
+    }
+  }
+
+  function readNext() {
+    reader.read().then(function(result) {
+      if (result.done) return;
+      buffer += result.value;
+      var newline = buffer.indexOf('\n');
+      while (newline !== -1) {
+        var line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        var val = parseFloat(line);
+        if (!isNaN(val) && val >= 0 && val <= 200) {
+          updateDistance(val);
+        }
+        newline = buffer.indexOf('\n');
+      }
+      readNext();
+    }).catch(function(err) {
+      console.error('Disconnected:', err.message);
+    });
+  }
+</script>
+
+</body>
+</html>
